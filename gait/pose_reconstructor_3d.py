@@ -72,11 +72,13 @@ class PoseReconstructor3D:
     # 重建
     # =========================
     def reconstruct(self, rgb, depth):
+
         skeleton_2d, skeleton_world = self.pose2d.detect(rgb)
         if skeleton_2d is None:
             return None
 
         skeleton_3d = []
+        current_depths = np.zeros(len(skeleton_2d))  # ⭐ 记录本帧深度
 
         # -----------------------------
         # 判断左右髋哪侧在前
@@ -84,12 +86,6 @@ class PoseReconstructor3D:
         left_hip_c = skeleton_2d[1,2]
         right_hip_c = skeleton_2d[2,2]
 
-        # 左右髋索引
-        hip_idxs = [1,2]
-        knee_idxs = [3,4]
-        ankle_idxs = [5,6]
-
-        # 判断前后：c 高侧为前
         if left_hip_c >= right_hip_c:
             front_side = "left"
             back_side = "right"
@@ -97,40 +93,78 @@ class PoseReconstructor3D:
             front_side = "right"
             back_side = "left"
 
+        # 左右关节索引
+        left_idxs = [1,3,5]   # hip, knee, ankle
+        right_idxs = [2,4,6]
+
         # -----------------------------
         # 重建每个关节
         # -----------------------------
         for i, (u,v,c) in enumerate(skeleton_2d):
             u, v = int(u), int(v)
 
-            # 默认深度获取
+            # ===== 1️⃣ 当前深度 =====
             d = self.get_depth(depth, u, v)
 
-            # 对后侧可见度低的关节进行深度修正
-            if (back_side == "left" and i in hip_idxs[0:1]+knee_idxs[0:1]+ankle_idxs[0:1]) or \
-            (back_side == "right" and i in hip_idxs[1:2]+knee_idxs[1:2]+ankle_idxs[1:2]):
+            use_temporal = False
 
-                if c < 0.5:  # 可见度低阈值，可调
-                    # 用同侧其他关节的深度平均值替代
-                    same_side_idxs = []
+            # -----------------------------
+            # 判断是否需要修正（遮挡）
+            # -----------------------------
+            if back_side == "left" and i in left_idxs:
+                need_fix = (c < 0.5)
+                same_side = left_idxs
+            elif back_side == "right" and i in right_idxs:
+                need_fix = (c < 0.5)
+                same_side = right_idxs
+            else:
+                need_fix = False
 
-                    if back_side == "left":
-                        same_side_idxs = [3,5]  # 左膝和左踝
-                    else:
-                        same_side_idxs = [4,6]  # 右膝和右踝
+            # -----------------------------
+            # ⭐ 遮挡处理
+            # -----------------------------
+            if need_fix:
 
-                    d_vals = []
-                    for idx in same_side_idxs:
-                        uu, vv = int(skeleton_2d[idx,0]), int(skeleton_2d[idx,1])
-                        dd = self.get_depth(depth, uu, vv)
-                        if dd > 0:
-                            d_vals.append(dd)
-                    if len(d_vals) > 0:
-                        d = np.median(d_vals)  # 用中值避免异常
+                # ===== 2️⃣ 空间补偿 =====
+                d_vals = []
+                for idx in same_side:
+                    uu, vv = int(skeleton_2d[idx,0]), int(skeleton_2d[idx,1])
+                    dd = self.get_depth(depth, uu, vv)
+                    if dd > 0:
+                        d_vals.append(dd)
 
+                if len(d_vals) > 0:
+                    d = np.median(d_vals)
+
+                else:
+                    # ===== 3️⃣ 时间补偿 ⭐核心新增 =====
+                    if self.prev_depths is not None:
+                        prev_d = self.prev_depths[i]
+                        if prev_d > 0:
+                            d = prev_d
+                            use_temporal = True
+
+            # -----------------------------
+            # ⭐ 时间平滑（进一步稳定）
+            # -----------------------------
+            if self.prev_depths is not None:
+                prev_d = self.prev_depths[i]
+                if prev_d > 0 and d > 0:
+                    alpha = 0.7 if use_temporal else 0.5
+                    d = alpha * prev_d + (1 - alpha) * d
+
+            current_depths[i] = d
+
+            # -----------------------------
+            # 转3D
+            # -----------------------------
             xyz = self.uv_to_xyz(u, v, d)
             xyz = self.cam_to_world(xyz)
+
             skeleton_3d.append(xyz)
+
+        # 更新历史深度
+        self.prev_depths = current_depths.copy()
 
         skeleton_3d = np.array(skeleton_3d)
         self.all_3d.append(skeleton_3d)
