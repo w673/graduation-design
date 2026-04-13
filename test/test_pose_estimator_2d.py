@@ -8,8 +8,8 @@ from gait.pose_estimator_2d import PoseEstimator2D
 # =========================
 # 输入输出路径
 # =========================
-rgb_dir = "/data1/fwl_files/rgb_frames"         # 连续帧图片目录
-timestamp_path = "/data1/fwl_files/timestamps.txt"  # 时间戳文件
+rgb_dir = "/data1/fwl_files/middle_demo_1/rgb_frames"         # 连续帧图片目录
+timestamp_path = "/data1/fwl_files/middle_demo_1/timestamps.txt"  # 时间戳文件
 output_video = "/data1/fwl_files/design/result/output_2d_pose_mediapipe.mp4"
 
 # =========================
