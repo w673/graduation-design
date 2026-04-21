@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 from gait.pose_estimator_2d import PoseEstimator2D
-from gait.pose_reconstructor_3d_copy import PoseReconstructor3D, CameraParam
+from gait.pose_reconstructor_3d import PoseReconstructor3D, CameraParam
 
 # =========================
 # 路径
